@@ -20,6 +20,7 @@ class ComputationTest(unittest.TestCase):
 		  "b = 2; a = 1; c = a + b; d = g(c); f = g(c, 5); g = h();",
 		  "g(a) = a b; g(x, y) = x + y; h() = ceil(4.009);",
 		  "g(a + b + c + d + f + 10.007 - e, h()); 77(b) - 22b; g(-c); g(g(g(2)));",
+		  "`number 5` = 5; `5.6` = 5.6; `number 5` + `5.6`",
 		 ])
 		)
 		
@@ -37,7 +38,10 @@ class ComputationTest(unittest.TestCase):
 		self._session.addEquation(self._session.createEquation("77(b) - 22b"))
 		self._session.addEquation(self._session.createEquation("g(-c)"))
 		self._session.addEquation(self._session.createEquation("g(g(g(2)))"))
-		
+		self._session.setVariable(self._session.createVariable("`number 5` = 5"))
+		self._session.setVariable(self._session.createVariable("`5.6` = 5.6"))
+		self._session.addEquation(self._session.createEquation("`number 5` + `5.6`"))
+
 	def testLexer(self):
 		"""
 		This test ensures that the more primitive logic of the lexer is working
@@ -142,7 +146,11 @@ class ComputationTest(unittest.TestCase):
 		self.assertEqual(variables_full['f'].evaluate(), 8)
 		self.assertEqual(variables['g'].evaluate(), 5)
 		self.assertEqual(variables_full['g'].evaluate(), 5)
-		
+		self.assertEqual(variables['number 5'].evaluate(), 5)
+		self.assertEqual(variables_full['number 5'].evaluate(), 5)
+		self.assertEqual(variables['5.6'].evaluate(), 5.6)
+		self.assertEqual(variables_full['5.6'].evaluate(), 5.6)
+
 	def testFunctions(self):
 		"""
 		This test ensures that every function within the sessions reports proper
@@ -164,21 +172,8 @@ class ComputationTest(unittest.TestCase):
 		This test ensures that the result of evaluating the session is consistent
 		with expectations.
 		"""
-		(variables, equations) = self._session.evaluate()
-		(variables_full, equations_full) = self._session_full.evaluate()
-		
-		self.assertEqual(variables[0], ('a', 1))
-		self.assertEqual(variables_full[0], ('a', 1))
-		self.assertEqual(variables[1], ('b', 2))
-		self.assertEqual(variables_full[1], ('b', 2))
-		self.assertEqual(variables[2], ('c', 3))
-		self.assertEqual(variables_full[2], ('c', 3))
-		self.assertEqual(variables[3], ('d', 6))
-		self.assertEqual(variables_full[3], ('d', 6))
-		self.assertEqual(variables[4], ('f', 8))
-		self.assertEqual(variables_full[4], ('f', 8))
-		self.assertEqual(variables[5], ('g', 5))
-		self.assertEqual(variables_full[5], ('g', 5))
+		(_, equations) = self._session.evaluate()
+		(_, equations_full) = self._session_full.evaluate()
 		
 		self.assertEqual(equations[0][1], 35.007 - math.e)
 		self.assertEqual(equations_full[0][1], 35.007 - math.e)
@@ -188,6 +183,8 @@ class ComputationTest(unittest.TestCase):
 		self.assertEqual(equations_full[2][1], -6)
 		self.assertEqual(equations[3][1], 16)
 		self.assertEqual(equations_full[3][1], 16)
+		self.assertEqual(equations[4][1], 10.6)
+		self.assertEqual(equations_full[4][1], 10.6)
 		
 	def testErrors(self):
 		"""

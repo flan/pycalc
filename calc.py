@@ -40,14 +40,13 @@ except NameError:
     
 #Constants
 ########################################
-_ALPHA_BLOB = r"[A-Za-z_]" #: All characters that can be used in a variable/function name.
+_IDENTITIFER_PATTERN = r"(?:[A-Za-z_]+|`.+?`)" #: Patterns that can be used for a variable/function name.
 _NUMERIC_REGEXP = re.compile(r"^(\d+(?:\.\d+)?|\.\d+)") #: Matches numeric entities.
-_FUNCTION_REGEXP = re.compile(r"^(%s+)\(" % (_ALPHA_BLOB)) #: Matches function entities.
-_VARIABLE_REGEXP = re.compile(r"^(%s+)" % (_ALPHA_BLOB)) #: Matches variable entities.
-_QUOTED_VARIABLE_REGEXP = re.compile(r'^`(.+?)`') #: Matches quoted variable entities.
+_FUNCTION_REGEXP = re.compile(r"^(%s)\(" % (_IDENTITIFER_PATTERN)) #: Matches function entities.
+_VARIABLE_REGEXP = re.compile(r"^(%s)" % (_IDENTITIFER_PATTERN)) #: Matches variable entities.
 
-_LINE_FUNCTION_REGEXP = re.compile(r"^(%s+)\(\s*(?:((?:%s+,\s*)*%s+)\s*)?\)\s*=\s*(.+)$" % (_ALPHA_BLOB, _ALPHA_BLOB, _ALPHA_BLOB)) #: Determines whether a line is a function.
-_LINE_VARIABLE_REGEXP = re.compile(r"^(%s+)\s*=\s*(.+)$" % (_ALPHA_BLOB)) #: Determines whether a line is a variable.
+_LINE_FUNCTION_REGEXP = re.compile(r"^(%s)\(\s*(?:((?:%s,\s*)*%s)\s*)?\)\s*=\s*(.+)$" % (_IDENTITIFER_PATTERN, _IDENTITIFER_PATTERN, _IDENTITIFER_PATTERN)) #: Determines whether a line is a function.
+_LINE_VARIABLE_REGEXP = re.compile(r"^(%s)\s*=\s*(.+)$" % (_IDENTITIFER_PATTERN)) #: Determines whether a line is a variable.
 
 _LINE_EQUATION = 0 #: Indicates that a line seems to be an equation.
 _LINE_FUNCTION = 1 #: Indicates that a line seems to be a function.
@@ -229,6 +228,11 @@ del _generateBuiltinFunctions #Remove the no-longer-necessary generator.
 
 #Calculator logic
 ########################################
+def _preprocessIdentifier(identifier):
+    if identifier[0] == '`':
+        return identifier[1:-1]
+    return identifier
+    
 def _parseLine(raw_line):
     """
     This function serves as the calculator's lexer, taking an input string and
@@ -261,20 +265,20 @@ def _parseLine(raw_line):
         
     @raise IllegalCharacterError: If an invalid character is found.
     """
-    line = raw_line
+    line = raw_line.strip()
     tokens = []
     
     match = _LINE_FUNCTION_REGEXP.match(line)
     if match:
         line_type = _LINE_FUNCTION
-        tokens.append(match.group(1)) #Add the name.
+        tokens.append(_preprocessIdentifier(match.group(1))) #Add the name.
         tokens.append(match.group(2)) #Add the parameters.
         line = match.group(3)
     else:
         match = _LINE_VARIABLE_REGEXP.match(line)
         if match:
             line_type = _LINE_VARIABLE
-            tokens.append(match.group(1)) #Add the name.
+            tokens.append(_preprocessIdentifier(match.group(1))) #Add the name.
             line = match.group(2)
         else:
             line_type = _LINE_EQUATION
@@ -299,12 +303,12 @@ def _splitLine(line, raw_line):
         else:
             match = _FUNCTION_REGEXP.match(line)
             if match:
-                tokens.append("%s:%s" % (_FUNCTION_PREFIX, match.group(1)))
+                tokens.append("%s:%s" % (_FUNCTION_PREFIX, _preprocessIdentifier(match.group(1))))
                 tokens.append('(')
             else:
-                match = _VARIABLE_REGEXP.match(line) or _QUOTED_VARIABLE_REGEXP.match(line)
+                match = _VARIABLE_REGEXP.match(line)
                 if match:
-                    tokens.append("%s:%s" % (_VARIABLE_PREFIX, match.group(1)))
+                    tokens.append("%s:%s" % (_VARIABLE_PREFIX, _preprocessIdentifier(match.group(1))))
                 else:
                     if line[0] in _ALLOWED_TOKENS:
                         tokens.append(line[0])
@@ -1298,7 +1302,7 @@ class Session(object):
         self._equations = []
         if input:
             for i in input.split(';'):
-                (tokens, line_type) = _parseLine(i.strip())
+                (tokens, line_type) = _parseLine(i)
                 if tokens:
                     if line_type == _LINE_VARIABLE:
                         name = tokens[0]
@@ -1660,7 +1664,7 @@ class Session(object):
         @rtype: callable
         @return: A callable that provides a number, requiring no arguments.
         """
-        (tokens, line_type) = _parseLine(input.strip())
+        (tokens, line_type) = _parseLine(input)
         if line_type != _LINE_EQUATION:
             raise CompilationError(input)
             
