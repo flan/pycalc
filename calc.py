@@ -3,12 +3,14 @@
 """
 calc: A general-purpose, feature-rich calculator module
 
+Compatible with Python 2.6+ and Python 3.
+
 Legal
 =====
  All code, unless otherwise indicated, is original, and subject to the terms of
  the attached licensing agreement.
  
- Copyright (c) Neil Tallim, 2002-2016
+ Copyright (c) Neil Tallim, 2002-2019
  
  This program is free software: you can redistribute it and/or modify
  it under the terms of the GNU Lesser General Public License as published by
@@ -26,9 +28,16 @@ Legal
 import collections
 import functools
 import math
+import numbers
 import re
 import random
 
+#Python3 compatibility
+try:
+    basestring
+except NameError:
+    basestring = str
+    
 #Constants
 ########################################
 _ALPHA_BLOB = r"[A-Za-z_]" #: All characters that can be used in a variable/function name.
@@ -38,13 +47,11 @@ _VARIABLE_REGEXP = re.compile(r"^(%s+|\?)" % (_ALPHA_BLOB)) #: Matches variable 
 _QUOTED_VARIABLE_REGEXP = re.compile(r'^`(.+?)`') #: Matches quoted variable entities.
 
 _LINE_FUNCTION_REGEXP = re.compile(r"^(%s+)\(\s*(?:((?:%s+,\s*)*%s+)\s*)?\)\s*=\s*(.+)$" % (_ALPHA_BLOB, _ALPHA_BLOB, _ALPHA_BLOB)) #: Determines whether a line is a function.
-_LINE_SOLVE_LINEAR_REGEXP = re.compile(r"^solve\(\s*(.+?)\s*,\s*(.+?)\s*\)$") #: Determines whether a line is a solve() function.
 _LINE_VARIABLE_REGEXP = re.compile(r"^(%s+)\s*=\s*(.+)$" % (_ALPHA_BLOB)) #: Determines whether a line is a variable.
 
 _LINE_EQUATION = 0 #: Indicates that a line seems to be an equation.
 _LINE_FUNCTION = 1 #: Indicates that a line seems to be a function.
-_LINE_SOLVE_LINEAR = 2 #: Indicates that a line seems to be a solve() function.
-_LINE_VARIABLE = 3 #: Indicates that a line seems to be a variable.
+_LINE_VARIABLE = 2 #: Indicates that a line seems to be a variable.
 
 _FUNCTION_CUSTOM = 0 #: Indicates that a token is a custom function.
 _FUNCTION_BUILTIN = 1 #: Indicates that a token is a built-in function.
@@ -84,7 +91,6 @@ _OPERATOR_PRECEDENCE = {
 _VARIABLES = {
  'e': (_VARIABLE_BUILTIN, math.e),
  'pi': (_VARIABLE_BUILTIN, math.pi),
- '?': (_VARIABLE_BUILTIN, 1j), #Complex number for equation-solver.
 } #: Pre-defined variables.
 
 def _generateBuiltinFunctions():
@@ -143,7 +149,7 @@ def _generateBuiltinFunctions():
             return 1
         elif args[0] > 100:
             raise ThresholdError("Value passed to fact() (%i) is too large. Use 100 or less." % args[0])
-        return reduce(lambda x, y:x*y, xrange(1, args[0] + 1))
+        return functools.reduce(lambda x, y:x*y, range(1, args[0] + 1))
     functions[(1, 'fact')] = _fact
     
     def _floor(args):
@@ -258,29 +264,22 @@ def _parseLine(raw_line):
     line = raw_line
     tokens = []
     
-    line_type = None
-    match = _LINE_SOLVE_LINEAR_REGEXP.match(line)
+    match = _LINE_FUNCTION_REGEXP.match(line)
     if match:
-        line_type = _LINE_SOLVE_LINEAR
-        tokens.append(_splitLine(match.group(1), raw_line))
-        tokens.append(_splitLine(match.group(2), raw_line))
+        line_type = _LINE_FUNCTION
+        tokens.append(match.group(1)) #Add the name.
+        tokens.append(match.group(2)) #Add the parameters.
+        line = match.group(3)
     else:
-        match = _LINE_FUNCTION_REGEXP.match(line)
+        match = _LINE_VARIABLE_REGEXP.match(line)
         if match:
-            line_type = _LINE_FUNCTION
+            line_type = _LINE_VARIABLE
             tokens.append(match.group(1)) #Add the name.
-            tokens.append(match.group(2)) #Add the parameters.
-            line = match.group(3)
+            line = match.group(2)
         else:
-            match = _LINE_VARIABLE_REGEXP.match(line)
-            if match:
-                line_type = _LINE_VARIABLE
-                tokens.append(match.group(1)) #Add the name.
-                line = match.group(2)
-            else:
-                line_type = _LINE_EQUATION
-        tokens += _splitLine(line, raw_line)
-        
+            line_type = _LINE_EQUATION
+    tokens += _splitLine(line, raw_line)
+    
     return (tokens, line_type)
     
 def _splitLine(line, raw_line):
@@ -768,8 +767,10 @@ def _evaluate(token, call_stack):
             return token[1]
         elif token[0] == _FUNCTION_CUSTOM:
             return token[1].evaluate(token[2], call_stack)
-        elif token[0] in (_FUNCTION_BUILTIN, _FUNCTION_EXTERNAL):
+        elif token[0] == _FUNCTION_BUILTIN:
             return token[1]([i.evaluate(call_stack) for i in token[2]])
+        elif token[0] == _FUNCTION_EXTERNAL:
+            return token[1].evaluate([i.evaluate(call_stack) for i in token[2]], call_stack)
         else:
             raise UnknownTypeError(token)
     return token
@@ -933,37 +934,6 @@ class Equation(object):
     def __str__(self):
         return _renderExpression(self._tokens)
         
-class LinearEquation(Equation):
-    _left_side = None
-    _right_side = None
-    
-    def __init__(self, left_side, right_side):
-        if not left_side or not right_side:
-            raise TokensError()
-            
-        self._left_side = left_side
-        self._right_side = right_side
-        self._tokens = ['('] + left_side + [')', '-', '('] + right_side + [')']
-        
-    def copy(self):
-        """
-        Returns a non-compiled copy.
-        """
-        return LinearEquation(self._left_side, self._right_side)
-        
-    def evaluate(self, stack=None):
-        result = Equation.evaluate(self, stack)
-        return -result.real/result.imag
-        
-    def __str__(self):
-        return ' '.join((
-         _renderExpression(self._left_side),
-         '=',
-         _renderExpression(self._right_side),
-         '|',
-         '?',
-        ))
-        
 class Variable(Equation):
     """
     This class models a variable, which is an equation that stores a value for
@@ -1102,13 +1072,16 @@ class Parameter(Variable):
         """
         return Parameter(self._name)
         
-    def assign(self, equation):
+    def assign(self, equation, stack):
         """
         This function assigns a value to this parameter, allowing it to be used
         when the function is called.
         
         @type equation: Equation
         @param equation: The equation attached to this parameter.
+        @type stack: list|None
+        @param stack: A stack containing every function and variable traversed
+            until this point.
         
         @raise CompilationError: If this equation has not been compiled.
         @raise RecursionError: If this equation has already been invoked during
@@ -1122,13 +1095,16 @@ class Parameter(Variable):
         @raise NullSubexpressionError: If a bracketed expression contains no
             content.
         """
-        self._equation = equation.getRPNTokens()
-        self.compute()
+        if isinstance(equation, numbers.Number):
+            self._equation = [equation]
+        else:
+            self._equation = equation.getRPNTokens()
+        self.compute(stack[:])
         
     def unassign(self):
         """
         This function clears the value of this parameter, allowing its values to
-        be    removed from the interpreter once they are no longer needed.
+        be removed from the interpreter once they are no longer needed.
         """
         self._equation = None
         self.reset()
@@ -1222,7 +1198,7 @@ class Function(Equation):
         @type arguments: tuple
         @param arguments: A tuple of equations that are mapped, in order, to this
             function's parameters.
-        @type stack: list
+        @type stack: list|None
         @param stack: A stack containing every function and variable traversed
             until this point.
         
@@ -1242,7 +1218,7 @@ class Function(Equation):
             content.
         """
         for ((name, parameter), argument) in zip(self._parameters, arguments):
-            parameter.assign(argument)
+            parameter.assign(argument, stack)
             
         result = Equation.evaluate(self, stack)
         
@@ -1329,10 +1305,8 @@ class Session(object):
                         self._variables[name] = Variable(tokens[1:], name)
                     elif line_type == _LINE_FUNCTION:
                         name = tokens[0]
-                        self._functions[(function.getArity(), name)] = Function(tokens[1:], name)
-                    elif line_type == _LINE_SOLVE_LINEAR:
-                        (left_side, right_side) = tokens
-                        self._equations.append(LinearEquation(left_side, right_side))
+                        function = Function(tokens[1:], name)
+                        self._functions[(function.getArity(), name)] = function
                     else:
                         self._equations.append(Equation(tokens))
                         
@@ -1456,7 +1430,7 @@ class Session(object):
         @rtype: tuple
         @return: A collection of 'name/arity' function-identifying strings.
         """
-        functions = set(['solve/2'])
+        functions = set()
         for (arity, name) in _FUNCTIONS.keys():
             functions.add("%s/%i" % (name, arity))
             
@@ -1580,9 +1554,6 @@ class Session(object):
         equation = None
         if line_type == _LINE_EQUATION:
             equation = Equation(tokens)
-        elif line_type == _LINE_SOLVE_LINEAR:
-            (left_side, right_side) = tokens
-            equation = LinearEquation(left_side, right_side)
         else:
             raise InstantiationError("Not an equation")
             
@@ -1603,7 +1574,7 @@ class Session(object):
         @raise InstantiationError: If something other than an Equation is
             provided.
         """
-        if not type(equation) in (Equation, LinearEquation):
+        if not type(equation) == Equation:
             raise InstantiationError("Non-Equation input")
             
         self._equations.append(equation)
@@ -1652,9 +1623,9 @@ class Session(object):
             content.
         """
         values = []
-        for (variable_type, variable) in self._variables.iteritems():
+        for (variable_type, variable) in self._variables.items():
             variable.compute()
-            values.append(variable_type, variable.evaluate())
+            values.append((variable_type, variable.evaluate()))
             
         results = [(str(equation), equation.evaluate()) for equation in self._equations]
             
@@ -1895,7 +1866,7 @@ if __name__ == "__main__":
     import sys
     
     if len(sys.argv) == 1:
-        print "Nothing to computate. :("
+        print("Nothing to computate. :(")
     else:
         for i in sys.argv[1:]:
             session = Session(i)
@@ -1903,14 +1874,14 @@ if __name__ == "__main__":
             
             if equations:
                 if variables:
-                    print "Variables:"
+                    print("Variables:")
                     for (name, value) in variables:
-                        print "\t%s = %s" % (name, value)
-                    print
-                print "Equations:"
+                        print("\t%s = %s" % (name, value))
+                    print()
+                print("Equations:")
                 for (equation, value) in equations:
-                    print "\t%s = %s" % (equation, value)
+                    print("\t%s = %s" % (equation, value))
             else:
-                print "No expressions provided."
-            print '-' * 40 + '\n'
+                print("No expressions provided.")
+            print('-' * 40 + '\n')
             
