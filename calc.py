@@ -43,7 +43,7 @@ except NameError:
 _ALPHA_BLOB = r"[A-Za-z_]" #: All characters that can be used in a variable/function name.
 _NUMERIC_REGEXP = re.compile(r"^(\d+(?:\.\d+)?|\.\d+)") #: Matches numeric entities.
 _FUNCTION_REGEXP = re.compile(r"^(%s+)\(" % (_ALPHA_BLOB)) #: Matches function entities.
-_VARIABLE_REGEXP = re.compile(r"^(%s+|\?)" % (_ALPHA_BLOB)) #: Matches variable entities.
+_VARIABLE_REGEXP = re.compile(r"^(%s+)" % (_ALPHA_BLOB)) #: Matches variable entities.
 _QUOTED_VARIABLE_REGEXP = re.compile(r'^`(.+?)`') #: Matches quoted variable entities.
 
 _LINE_FUNCTION_REGEXP = re.compile(r"^(%s+)\(\s*(?:((?:%s+,\s*)*%s+)\s*)?\)\s*=\s*(.+)$" % (_ALPHA_BLOB, _ALPHA_BLOB, _ALPHA_BLOB)) #: Determines whether a line is a function.
